@@ -61,7 +61,6 @@
        static om/Ident
        (ident [this {:keys [db/id]}] [:db/id id])
        static om/IQuery
-       ; NOTE: is-friend is completely derived (is this person in the :friends set)
        (query [this] [:db/id :likes :name :is-friend])
        Object
        (render [this]
@@ -71,9 +70,13 @@
                          ;; Transact on likes is fine...only Person will need to re-render
                          (dom/a #js {:href "#" :onClick #(om/transact! this `[(~'like-it {:id ~id})])} "Like something")
                          " "
+                         ; NOTE: is-friend is completely derived by the parser (is this person in the :friends set)
                          ;; QUESTION: I could do this with callback from widget, but it adds a lot of extra code.
-                         ;; Also, from a pure reasoning standpoint, is-friend is part of this thing's UI state
+                         ;; Also, from a pure reasoning standpoint, is-friend is part of Person's UI state
                          ;; so making un-friend and make-friend callable from here seems desirable.
+                         ;; I can argue that something above me "Owns it"...or at least that it affects the
+                         ;; rendering of the friends list...but why should I have to care that people are even
+                         ;; rendered elsewhere on the screen?
                          (if is-friend
                            (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'un-friend {:id ~id})])} "Un-Friend!")
                            (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'make-friend {:id ~id})])} "Make Friend!")
