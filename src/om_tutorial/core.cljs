@@ -6,6 +6,9 @@
 
 (enable-console-print!)
 
+;; My app state is intentionally denormalized in a particular way that is a bit different from tutorials (in
+;; that my people refs are stored in a set of pure IDs instead of [:people 1] refs), but since read fronts
+;; it all, it should not matter.
 (def app-state
   (atom {:people  {1 {:db/id 1 :name "John" :likes 0}
                    4 {:db/id 4 :name "Mary" :likes 0}
@@ -24,48 +27,56 @@
 
 (defmethod mutate 'make-friend
   [{:keys [state]} key {:keys [id]}]
-  {;:value  [:is-friend]
-   :action (fn []
-             (swap! state update :friends conj id)
-             )})
+  {;:value  ??? ;; Not sure what this should be yet. ignore
+   :action (fn [] (swap! state update :friends conj id) )})
 
 (defmethod mutate 'un-friend
   [{:keys [state]} key {:keys [id]}]
-  {;:value  (om/get-query Widget)
-   :action (fn []
-             (swap! state update :friends disj id)
-             )})
+  {;:value  ???
+   :action (fn [] (swap! state update :friends disj id) )})
+
+(defmethod mutate 'like-it
+  [{:keys [state]} key {:keys [id]}]
+  {:value  [:likes]
+   :action (fn [] (swap! state update-in [:people id :likes] inc))})
 
 (defn read-people
-  "Read a group of people. Key is something like :friends or :family. Selector is a vector of keys you care about."
+  "Read a group of people. Key is something like :friends or :family. Selector is a vector of keys you care about.
+   Returns parse result of people sorted by name."
   [state key selector]
   (let [ids (get state key)
         friend-ids (get state :friends)
         get-person (fn [id]
-                     (-> state (get-in [:people id]) (assoc :is-friend (friend-ids id)) (select-keys selector)))]
+                     (-> state (get-in [:people id]) (assoc :is-friend (boolean (friend-ids id))) (select-keys selector)))]
     {:value (into [] (sort-by :name (map get-person ids)))}
     ))
 
 (defn dbg [k v] (println "READ " k v) v)
-(defmethod read :default [e k p] (println "ERROR: DEFAULT READ " k p) nil)
+(defmethod read :default [e k p] (println "ERROR: UNEXPECTED READ. " k p) nil)
 (defmethod read :root [{:keys [state parse selector] :as env} key params] (dbg key {:value (parse env selector)}))
 (defmethod read :family [{:keys [state selector]} key params] (dbg key (read-people @state key selector)))
 (defmethod read :friends [{:keys [selector state]} key _] (dbg key (read-people @state key selector)))
 
 (defui Person
        static om/Ident
-       (ident [this {:keys [db/id]}] [:people id])
+       (ident [this {:keys [db/id]}] [:db/id id])
        static om/IQuery
-       (query [this] [:db/id :name :is-friend])
+       ; NOTE: is-friend is completely derived (is this person in the :friends set)
+       (query [this] [:db/id :likes :name :is-friend])
        Object
        (render [this]
-               (let [{:keys [db/id name is-friend]} (-> this om/props)]
+               (let [{:keys [db/id name likes is-friend]} (-> this om/props)]
                  (dom/li nil
-                         name
+                         (str name " has liked " likes " things.")
+                         ;; Transact on likes is fine...only Person will need to re-render
+                         (dom/a #js {:href "#" :onClick #(om/transact! this `[(~'like-it {:id ~id})])} "Like something")
                          " "
+                         ;; QUESTION: I could do this with callback from widget, but it adds a lot of extra code.
+                         ;; Also, from a pure reasoning standpoint, is-friend is part of this thing's UI state
+                         ;; so making un-friend and make-friend callable from here seems desirable.
                          (if is-friend
-                           (dom/a #js {:href "#" :onClick #(om/transact! this `[(~'un-friend {:id ~id})])} "Un-Friend!")
-                           (dom/a #js {:href "#" :onClick #(om/transact! this `[(~'make-friend {:id ~id})])} "Make Friend!")
+                           (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'un-friend {:id ~id})])} "Un-Friend!")
+                           (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'make-friend {:id ~id})])} "Make Friend!")
                            )))))
 
 (def person (om/factory Person {:keyfn :db/id}))
