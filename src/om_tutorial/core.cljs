@@ -7,13 +7,12 @@
 (enable-console-print!)
 
 (def app-state
-  (atom {:config  {:window/size [1920 1200]}
-         :people  {1 {:db/id 1 :name "John" :likes 0}
+  (atom {:people  {1 {:db/id 1 :name "John" :likes 0}
                    4 {:db/id 4 :name "Mary" :likes 0}
                    5 {:db/id 5 :name "Bob" :likes 0}
                    2 {:db/id 2 :name "Gwen" :likes 0}
                    3 {:db/id 3 :name "Jeff" :likes 0}}
-         :friends #{4}
+         :friends #{4 1}
          :family  #{2 1 3 5}
          })
   )
@@ -21,35 +20,41 @@
 (defmulti read om/dispatch)
 (defmulti mutate om/dispatch)
 
-(declare Person reconciler)
+(declare Widget Person reconciler)
 
 (defmethod mutate 'make-friend
   [{:keys [state]} key {:keys [id]}]
-  {:value  [:db/id :name :is-friend]
+  {;:value  [:is-friend]
    :action (fn []
              (swap! state update :friends conj id)
              )})
 
-(defmethod read :default [e k p]
-  (println "DEFAULT READ " k p)
-  nil)
+(defmethod mutate 'un-friend
+  [{:keys [state]} key {:keys [id]}]
+  {;:value  (om/get-query Widget)
+   :action (fn []
+             (swap! state update :friends disj id)
+             )})
 
-(defn read-people [state key]
+(defn read-people
+  "Read a group of people. Key is something like :friends or :family. Selector is a vector of keys you care about."
+  [state key selector]
   (let [ids (get state key)
         friend-ids (get state :friends)
-        get-person (fn [id] (assoc (get-in state [:people id]) :is-friend (friend-ids id)))]
-    {:value (into [] (reverse (sort-by :name (map get-person ids))))}
+        get-person (fn [id]
+                     (-> state (get-in [:people id]) (assoc :is-friend (friend-ids id)) (select-keys selector)))]
+    {:value (into [] (sort-by :name (map get-person ids)))}
     ))
 
-(defmethod read :family [{:keys [state selector]} key params]
-  (println selector key params)
-  (read-people @state key))
-(defmethod read :friends [{:keys [state]} key _] (read-people @state key))
-(defmethod read :friend-ids [{:keys [state]} key _] (get @state :friends))
+(defn dbg [k v] (println "READ " k v) v)
+(defmethod read :default [e k p] (println "ERROR: DEFAULT READ " k p) nil)
+(defmethod read :root [{:keys [state parse selector] :as env} key params] (dbg key {:value (parse env selector)}))
+(defmethod read :family [{:keys [state selector]} key params] (dbg key (read-people @state key selector)))
+(defmethod read :friends [{:keys [selector state]} key _] (dbg key (read-people @state key selector)))
 
 (defui Person
        static om/Ident
-       (ident [this {:keys [db/id]}] [:db/id id])
+       (ident [this {:keys [db/id]}] [:people id])
        static om/IQuery
        (query [this] [:db/id :name :is-friend])
        Object
@@ -92,13 +97,14 @@
 
 (defui Root
        static om/IQuery
-       (query [this] (om/get-query Widget))
+       (query [this] [{:root (om/get-query Widget)}])
        Object
        (render [this]
-               (dom/div nil
-                        (dom/h1 nil "My App")
-                        (widget (om/props this))
-                        )))
+               (let [{:keys [root]} (-> this om/props)]
+                 (dom/div nil
+                          (dom/h1 nil "My App")
+                          (widget root)
+                          ))))
 
 (def parser (om/parser {:read read :mutate mutate}))
 
