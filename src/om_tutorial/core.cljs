@@ -75,7 +75,7 @@
                          ;; Also, from a pure reasoning standpoint, is-friend is part of Person's UI state
                          ;; so making un-friend and make-friend callable from here seems desirable.
                          ;; I can argue that something above me "Owns it"...or at least that it affects the
-                         ;; rendering of the friends list...but why should I have to care that people are even
+                         ;; rendering of the friends list (which is a sibling)...but why should I have to care that people are even
                          ;; rendered elsewhere on the screen?
                          (if is-friend
                            (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'un-friend {:id ~id})])} "Un-Friend!")
