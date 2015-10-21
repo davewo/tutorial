@@ -27,13 +27,11 @@
 
 (defmethod mutate 'make-friend
   [{:keys [state]} key {:keys [id]}]
-  {;:value  ??? ;; Not sure what this should be yet. ignore
-   :action (fn [] (swap! state update :friends conj id) )})
+  {:action (fn [] (swap! state update :friends conj id))})
 
 (defmethod mutate 'un-friend
   [{:keys [state]} key {:keys [id]}]
-  {;:value  ???
-   :action (fn [] (swap! state update :friends disj id) )})
+  {:action (fn [] (swap! state update :friends disj id))})
 
 (defmethod mutate 'like-it
   [{:keys [state]} key {:keys [id]}]
@@ -67,18 +65,17 @@
                (let [{:keys [db/id name likes is-friend]} (-> this om/props)]
                  (dom/li nil
                          (str name " has liked " likes " things.")
-                         ;; Transact on likes is fine...only Person will need to re-render
                          (dom/a #js {:href "#" :onClick #(om/transact! this `[(~'like-it {:id ~id})])} "Like something")
                          " "
-                         ; NOTE: is-friend is completely derived by the parser (is this person in the :friends set)
-                         ;; QUESTION: I could do this with callback from widget, but it adds a lot of extra code.
-                         ;; Also, from a pure reasoning standpoint, is-friend is part of Person's UI state
-                         ;; so making un-friend and make-friend callable from here seems desirable.
-                         ;; I can argue that something above me "Owns it"...or at least that it affects the
-                         ;; rendering of the friends list (which is a sibling).
                          (if is-friend
-                           (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'un-friend {:id ~id})])} "Un-Friend!")
-                           (dom/a #js {:href "#" :onClick #(om/transact! reconciler `[(~'make-friend {:id ~id})])} "Make Friend!")
+                           ; :friends is added at the end of the transact parse expression to trigger re-rendering
+                           ; of the PersonList components.
+                           (dom/a
+                             #js {:href    "#"
+                                  :onClick #(om/transact! this `[(~'un-friend {:id ~id}) :friends])} "Un-Friend!")
+                           (dom/a
+                             #js {:href    "#"
+                                  :onClick #(om/transact! this `[(~'make-friend {:id ~id}) :friends])} "Make Friend!")
                            )))))
 
 (def person (om/factory Person {:keyfn :db/id}))
@@ -101,10 +98,7 @@
                           (dom/div nil "Friends:")
                           (person-list friends)
                           (dom/div nil "Family:")
-                          (person-list family)
-                          ))
-               )
-       )
+                          (person-list family)))))
 
 (def widget (om/factory Widget))
 
@@ -141,5 +135,7 @@
   (println @app-state)
 
   (om/from-history reconciler #uuid "c0785384-69d9-454b-a438-826346560c85")
+
+  (cljs.pprint/pprint @(get-in reconciler [:config :indexer]))
 
   )
